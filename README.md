@@ -181,18 +181,53 @@ sudo umount ./rootfs-alpha/proc 2>/dev/null || sudo umount -l ./rootfs-alpha/pro
 
 ## 3. Demo with Screenshots
 
-Insert annotated screenshots for each item below before submission.
+### 1. Multi-container supervision
 
-| # | Requirement | Evidence to Insert |
-|---|-------------|--------------------|
-| 1 | Multi-container supervision | Two or more live containers under one supervisor |
-| 2 | Metadata tracking | `engine ps` output with states, PID, limits, reason, log path |
-| 3 | Bounded-buffer logging | `logs/<id>.log` contents and supervisor activity |
-| 4 | CLI and IPC | A client command and supervisor response over the UNIX socket |
-| 5 | Soft-limit warning | `dmesg` line with `SOFT LIMIT` |
-| 6 | Hard-limit enforcement | `dmesg` line with `HARD LIMIT` and matching `engine ps` reason |
-| 7 | Scheduling experiment | Side-by-side workload outputs or measured timings |
-| 8 | Clean teardown | No zombies, supervisor shutdown, socket cleanup |
+Shows two or more containers running under one supervisor process.
+
+![Multi-container supervision](S1.jpeg)
+
+### 2. Metadata tracking
+
+Shows `engine ps` output with tracked container metadata such as PID, state, limits, reason, and log path.
+
+![Metadata tracking](s2.jpeg)
+
+### 3. Bounded-buffer logging
+
+Shows per-container log capture through the logging pipeline.
+
+![Bounded-buffer logging](s3.jpeg)
+
+### 4. CLI and IPC
+
+Shows a CLI command being issued and handled by the supervisor over the control-plane IPC path.
+
+![CLI and IPC](04-cli-ipc.jpeg)
+
+### 5. Soft-limit warning
+
+Shows the kernel module warning when a container exceeds its soft memory limit.
+
+![Soft-limit warning](05-soft-limit.jpeg)
+
+### 6. Hard-limit enforcement
+
+Shows the kernel module killing a container after it exceeds the hard memory limit, with supervisor metadata reflecting that outcome.
+
+![Hard-limit enforcement](06-hard-limit.jpeg)
+
+### 7. Scheduling experiment
+
+Shows workload behavior under different scheduling conditions.
+
+![Scheduling experiment](07-scheduling.jpeg)
+
+### 8. Clean teardown
+
+Shows clean shutdown, container reap, and absence of lingering zombie processes.
+
+![Clean teardown](08-teardown.jpeg)
 
 ## 4. Engineering Analysis
 
@@ -200,7 +235,7 @@ Insert annotated screenshots for each item below before submission.
 
 The runtime isolates containers with three namespaces created through `clone()`: `CLONE_NEWPID`, `CLONE_NEWUTS`, and `CLONE_NEWNS`. PID isolation gives each container its own PID view, so the process launched as the workload becomes PID 1 inside the container namespace even though the supervisor tracks the host PID. UTS isolation separates the hostname, which makes each container identity visible from inside the shell. Mount namespace isolation prevents mount-table updates inside the container from directly mutating the host mount view.
 
-Filesystem isolation is done with `chroot()` into a per-container writable rootfs copy. This is simpler than `pivot_root()` and is enough for the project requirement as long as each running container gets a unique writable rootfs. After `chroot`, the child mounts `/proc` inside that filesystem so tools like `ps` see the namespace-local process view. The host kernel is still shared across all containers. That means scheduling, physical memory, kernel code, device drivers, and the global kernel memory manager remain common even when process and filesystem views are isolated.
+Filesystem isolation is done with `chroot()` into a per-container writable rootfs copy. This is simpler than `pivot_root()` and is enough for the project requirement as long as each running container gets a unique writable rootfs. After `chroot()`, the child mounts `/proc` inside that filesystem so tools like `ps` see the namespace-local process view. The host kernel is still shared across all containers. That means scheduling, physical memory, kernel code, device drivers, and the global kernel memory manager remain common even when process and filesystem views are isolated.
 
 ### Supervisor and Process Lifecycle
 
@@ -220,11 +255,11 @@ The log path is a bounded-buffer producer-consumer design. Each container has a 
 - `not_full` blocks producers when the buffer is full
 - `not_empty` blocks the consumer when the buffer is empty
 
-Without this synchronization, producers could overwrite each other’s slots, consumers could read partially-written entries, and shutdown could race with active logging. Metadata is protected separately by `metadata_lock` because container state and log-buffer slots are different shared structures with different critical sections. Separating those locks avoids holding metadata state while a producer blocks on a full buffer.
+Without this synchronization, producers could overwrite each other's slots, consumers could read partially-written entries, and shutdown could race with active logging. Metadata is protected separately by `metadata_lock` because container state and log-buffer slots are different shared structures with different critical sections. Separating those locks avoids holding metadata state while a producer blocks on a full buffer.
 
 ### Memory Management and Enforcement
 
-RSS measures resident physical pages currently mapped into a process address space. It captures memory that is actually resident in RAM, but it does not represent every part of memory use. It does not directly tell you total virtual memory size, kernel memory consumed on behalf of the process, or future allocation intent. It is still a useful signal here because the project wants enforcement based on the process’s current real footprint.
+RSS measures resident physical pages currently mapped into a process address space. It captures memory that is actually resident in RAM, but it does not represent every part of memory use. It does not directly tell you total virtual memory size, kernel memory consumed on behalf of the process, or future allocation intent. It is still a useful signal here because the project wants enforcement based on the process's current real footprint.
 
 Soft and hard limits represent two different policies. A soft limit is informational. Crossing it means the process is under memory pressure, but the runtime only warns the operator once. A hard limit is an enforcement boundary. Once the process exceeds it, the monitor kills the process. This logic belongs in kernel space because the kernel has authoritative access to process memory accounting and can apply enforcement without trusting user-space timing or cooperation. A purely user-space monitor could miss short-lived spikes, race against process exit, or fail to signal a process that is already in a problematic state.
 
