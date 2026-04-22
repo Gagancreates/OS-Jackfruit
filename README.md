@@ -2,8 +2,8 @@
 
 ## 1. Team Information
 
-- Team member 1: `<Name>` - `<SRN>`
-- Team member 2: `<Name>` - `<SRN>`
+- Team member 1: `Gagan` - `PES1UG24CS166`
+- Team member 2: `Dhruva Myakeri` - `PES1UG24CS156`
 
 Replace the placeholders above before submission.
 
